@@ -957,7 +957,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         down_block_res_samples = (sample,)
         if quick_replicate and replicate_prv_feature is not None:
             # Down
-            for i, downsample_block in enumerate(self.down_blocks):
+            for i, downsample_block in enumerate(self.down_blocks):  # TODO: for exposing
                 if i > cache_layer_id:
                     break
 
@@ -996,7 +996,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             else:
                 cache_block_id += 1
 
-            for i, upsample_block in enumerate(self.up_blocks):
+            for i, upsample_block in enumerate(self.up_blocks):  # TODO: for exposing
                 if i < len(self.up_blocks) - 1 - cache_layer_id:
                     continue
 
