@@ -1150,3 +1150,63 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
             return (sample, prv_f,)
         
         return UNet2DConditionOutput(sample=sample)
+
+
+    def get_layer_block_params(self, layer_id: int, block_id: int):
+        """
+        获取指定层和块的参数。
+
+        Args:
+            layer_id (int): 指定的层 ID (0-based)。
+            block_id (int): 指定的块 ID (0-based)。
+
+        Returns:
+            dict: 包含层和块参数的字典。
+        """
+        params = {}
+
+        # 检查层是否在 down_blocks 中
+        if layer_id < len(self.down_blocks):
+            layer = self.down_blocks[layer_id]
+            if block_id < len(layer.attentions):  # 如果块是注意力层
+                block = layer.attentions[block_id]
+            elif block_id < len(layer.resnets):  # 如果块是残差层
+                block = layer.resnets[block_id - len(layer.attentions)]
+            else:
+                raise ValueError(f"Invalid block_id {block_id} for layer {layer_id}")
+            params["weights"] = block.state_dict()
+            params["name"] = f"down_block_{layer_id}_block_{block_id}"
+        # 检查层是否在 up_blocks 中
+        elif layer_id >= len(self.down_blocks) and layer_id - len(self.down_blocks) < len(self.up_blocks):
+            up_layer_id = layer_id - len(self.down_blocks)
+            layer = self.up_blocks[up_layer_id]
+            if block_id < len(layer.resnets):  # 如果块是残差层
+                block = layer.resnets[block_id]
+            else:
+                raise ValueError(f"Invalid block_id {block_id} for layer {layer_id}")
+            params["weights"] = block.state_dict()
+            params["name"] = f"up_block_{up_layer_id}_block_{block_id}"
+        else:
+            raise ValueError(f"Invalid layer_id {layer_id}")
+
+        return params
+    
+    def dump_layer_block_params(self, layer_id: int, block_id: int, output_file: str):
+        """
+        导出指定层和块的参数到文件。
+
+        Args:
+            layer_id (int): 指定的层 ID (0-based)。
+            block_id (int): 指定的块 ID (0-based)。
+            output_file (str): 输出文件路径，支持 .pt (PyTorch 格式) 和 .json (JSON 格式)。
+        """
+        params = self.get_layer_block_params(layer_id, block_id)
+        if output_file.endswith(".pt"):
+            torch.save(params["weights"], output_file)
+        elif output_file.endswith(".json"):
+            import json
+            params_serializable = {k: v.tolist() for k, v in params["weights"].items()}
+            with open(output_file, "w") as f:
+                json.dump(params_serializable, f)
+        else:
+            raise ValueError("Unsupported file format. Use .pt or .json")

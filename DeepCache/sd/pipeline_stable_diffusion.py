@@ -740,6 +740,8 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         #print(interval_seq, len(interval_seq), pow)
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
+            # TODO: according to time steps, call unet.get_layer_block_params() to get the layer and block number 
+            # or unet.dump_layer_block_params() to get all layer and block number
             #print("[INFO] Update Feature Interval = {}, Update Layer Number = {}, Update Block Number = {}".format(cache_interval, cache_layer_id, cache_block_id))
             for i, t in enumerate(timesteps):
                 # expand the latents if we are doing classifier free guidance
