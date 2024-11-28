@@ -56,7 +56,7 @@ if __name__ == "__main__":
     start_time = time.time()
     deepcache_output = pipe(
         prompt, 
-        cache_interval=5, cache_layer_id=0, cache_block_id=0,
+        cache_interval=10, cache_layer_id=0, cache_block_id=0,
         uniform=False, pow=1.4, center=15,
         output_type='pt', return_dict=True
     ).images

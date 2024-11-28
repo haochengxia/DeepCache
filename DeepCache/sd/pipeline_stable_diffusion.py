@@ -39,8 +39,12 @@ from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionS
 from .unet_2d_condition import UNet2DConditionModel
 from .pipeline_utils import DiffusionPipeline
 
+import matplotlib.pyplot as plt
+
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+inference_counter = 0
+samples_lists = [[None for _ in range(51)] for _ in range(2)]
 
 EXAMPLE_DOC_STRING = """
     Examples:
@@ -739,6 +743,9 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         interval_seq = sorted(interval_seq)
         #print(interval_seq, len(interval_seq), pow)
 
+        global inference_counter
+        global samples_lists
+        inference_counter += 1
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             # TODO: according to time steps, call unet.get_layer_block_params() to get the layer and block number 
             # or unet.dump_layer_block_params() to get all layer and block number
@@ -763,6 +770,91 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                     cache_block_id=cache_block_id,
                     return_dict=False,
                 )
+
+                print_diff_heatmap = False
+                if print_diff_heatmap:
+                    if inference_counter >= 2:
+                        samples_lists[inference_counter - 2][i] = noise_pred
+                
+                    if inference_counter == 3:
+                        frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[0][i])
+                        print("The distance between the same denosing step " + str(i) + " of SD and DC is " + str(frobenius_dist))
+                        plt.imshow((frobenius_dist[0][0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                        plt.colorbar(label="Value")
+                        plt.title("2-D Heat Map")
+                        plt.xlabel("X-axis")
+                        plt.ylabel("Y-axis")
+                        plt.savefig("heatmap" + str(i) + "c0-to-origin.png", dpi=300, bbox_inches='tight')
+                        plt.close()
+                        if i != 0:
+                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
+                            plt.imshow((frobenius_dist[0][0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                            plt.colorbar(label="Value")
+                            plt.title("2-D Heat Map")
+                            plt.xlabel("X-axis")
+                            plt.ylabel("Y-axis")
+                            if i in interval_seq:
+                                plt.savefig("heatmap" + str(i) + "c0-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+                            else:
+                                plt.savefig("heatmap" + str(i) + "c0-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+                            plt.close()
+                        plt.imshow((frobenius_dist[0][1]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                        plt.colorbar(label="Value")
+                        plt.title("2-D Heat Map")
+                        plt.xlabel("X-axis")
+                        plt.ylabel("Y-axis")
+                        plt.savefig("heatmap" + str(i) + "c1-to-origin.png", dpi=300, bbox_inches='tight')
+                        plt.close()
+                        if i != 0:
+                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
+                            plt.imshow((frobenius_dist[0][1]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                            plt.colorbar(label="Value")
+                            plt.title("2-D Heat Map")
+                            plt.xlabel("X-axis")
+                            plt.ylabel("Y-axis")
+                            if i in interval_seq:
+                                plt.savefig("heatmap" + str(i) + "c1-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+                            else:
+                                plt.savefig("heatmap" + str(i) + "c1-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+                            plt.close()
+                        plt.imshow((frobenius_dist[0][2]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                        plt.colorbar(label="Value")
+                        plt.title("2-D Heat Map")
+                        plt.xlabel("X-axis")
+                        plt.ylabel("Y-axis")
+                        plt.savefig("heatmap" + str(i) + "c2-to-origin.png", dpi=300, bbox_inches='tight')
+                        plt.close()
+                        if i != 0:
+                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
+                            plt.imshow((frobenius_dist[0][2]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                            plt.colorbar(label="Value")
+                            plt.title("2-D Heat Map")
+                            plt.xlabel("X-axis")
+                            plt.ylabel("Y-axis")
+                            if i in interval_seq:
+                                plt.savefig("heatmap" + str(i) + "c2-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+                            else:
+                                plt.savefig("heatmap" + str(i) + "c2-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+                            plt.close()
+                        plt.imshow((frobenius_dist[0][3]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                        plt.colorbar(label="Value")
+                        plt.title("2-D Heat Map")
+                        plt.xlabel("X-axis")
+                        plt.ylabel("Y-axis")
+                        plt.savefig("heatmap" + str(i) + "c3-to-origin.png", dpi=300, bbox_inches='tight')
+                        plt.close()
+                        if i != 0:
+                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
+                            plt.imshow((frobenius_dist[0][3]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+                            plt.colorbar(label="Value")
+                            plt.title("2-D Heat Map")
+                            plt.xlabel("X-axis")
+                            plt.ylabel("Y-axis")
+                            if i in interval_seq:
+                                plt.savefig("heatmap" + str(i) + "c3-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+                            else:
+                                plt.savefig("heatmap" + str(i) + "c3-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+                            plt.close()
 
                 # perform guidance
                 if do_classifier_free_guidance:
