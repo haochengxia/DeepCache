@@ -2,11 +2,17 @@ A picture of a bike standing in a green room with its rear wheel leaning against
 A picture of a man holding his surfboard and walking on the beach.
 A picture of a hand holding a green apple.
 A side profile shot of a road biker riding downhill.
-Three sports cars chasing each other on the road.
-A camel on a sand dune, with some cacti in the background.
 Three sports cars chasing each other on the road, with one driver extending their hand out of the window, giving a victory sign.
+A camel on a sand dune, with some cacti in the background.
 
 # For stable diffusion, the default cache interval is 5, maybe we can set it to 10. In total, there are 50 steps.
 # You can directly run the following commands.
 
 python stable_diffusion.py --prompt "$PROMPT"
+
+python stable_diffusion.py --prompt "A camel on a sand dune, with some cacti in the background."
+python stable_diffusion.py --prompt "A picture of a bike standing in a green room with its rear wheel leaning against a wooden table."
+python stable_diffusion.py --prompt "A picture of a man holding his surfboard and walking on the beach."
+python stable_diffusion.py --prompt "A picture of a hand holding a green apple."
+python stable_diffusion.py --prompt "A side profile shot of a road biker riding downhill."
+python stable_diffusion.py --prompt "Three sports cars chasing each other on the road, with one driver extending their hand out of the window, giving a victory sign."

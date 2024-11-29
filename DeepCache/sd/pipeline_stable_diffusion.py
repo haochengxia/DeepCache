@@ -563,6 +563,43 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         latents = latents * self.scheduler.init_noise_sigma
         return latents
 
+    def generate_heatmap(self, step, interval_seq, samples_lists, index0):
+        frobenius_dist = torch.abs(samples_lists[1][step] - samples_lists[0][step])
+        plt.imshow((frobenius_dist[0][index0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+        plt.colorbar(label="Value")
+        plt.title("2-D Heat Map")
+        plt.xlabel("X-axis")
+        plt.ylabel("Y-axis")
+        plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-origin.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        if step != 0:
+            frobenius_dist_step = torch.abs(samples_lists[1][step] - samples_lists[1][step - 1])
+            plt.imshow((frobenius_dist_step[0][index0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
+            plt.colorbar(label="Value")
+            plt.title("2-D Heat Map")
+            plt.xlabel("X-axis")
+            plt.ylabel("Y-axis")
+            if step in interval_seq:
+                plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+            else:
+                plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+            plt.close()
+
+    def compute_group_norm_deviation_sum(self, tensor):
+        group_deviation_sum = 0
+        
+        # iterate over each 64x64 group
+        for group in tensor.view(-1, 64, 64):  # Reshape to (-1, 64, 64) for easier processing
+            group_min = group.min()
+            group_max = group.max()
+            
+            normalized_group = (group - group_min) / (group_max - group_min)
+            mean_normalized = normalized_group.mean()
+            norm_deviation = (normalized_group - mean_normalized).abs().mean()
+            group_deviation_sum += norm_deviation
+        
+        return group_deviation_sum.item()
+
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
@@ -745,7 +782,18 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
 
         global inference_counter
         global samples_lists
+        last_step = 0
+        smart_interval_seq = True
+        plot_heat_map = False
+        max_dindex = 0
+        max_d = 0
+        round_counter = 1
+
         inference_counter += 1
+        if smart_interval_seq:
+            interval_seq = [0, 7, 12, 30, 40]       # semi-auto for car, at least + 3
+            # interval_seq = [4, 17, 29, 34, 37]    # This is a purely manual config for the camel
+
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             # TODO: according to time steps, call unet.get_layer_block_params() to get the layer and block number 
             # or unet.dump_layer_block_params() to get all layer and block number
@@ -771,90 +819,34 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                     return_dict=False,
                 )
 
-                print_diff_heatmap = False
-                if print_diff_heatmap:
+                if plot_heat_map:
                     if inference_counter >= 2:
                         samples_lists[inference_counter - 2][i] = noise_pred
-                
+                    if inference_counter == 3:                        
+                        self.generate_heatmap(i, interval_seq, samples_lists, 0)
+                        self.generate_heatmap(i, interval_seq, samples_lists, 1)
+                        self.generate_heatmap(i, interval_seq, samples_lists, 2)
+                        self.generate_heatmap(i, interval_seq, samples_lists, 3)
+
+                if smart_interval_seq:
                     if inference_counter == 3:
-                        frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[0][i])
-                        print("The distance between the same denosing step " + str(i) + " of SD and DC is " + str(frobenius_dist))
-                        plt.imshow((frobenius_dist[0][0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                        plt.colorbar(label="Value")
-                        plt.title("2-D Heat Map")
-                        plt.xlabel("X-axis")
-                        plt.ylabel("Y-axis")
-                        plt.savefig("heatmap" + str(i) + "c0-to-origin.png", dpi=300, bbox_inches='tight')
-                        plt.close()
+                        samples_lists[inference_counter - 2][i] = noise_pred
                         if i != 0:
-                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
-                            plt.imshow((frobenius_dist[0][0]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                            plt.colorbar(label="Value")
-                            plt.title("2-D Heat Map")
-                            plt.xlabel("X-axis")
-                            plt.ylabel("Y-axis")
-                            if i in interval_seq:
-                                plt.savefig("heatmap" + str(i) + "c0-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
-                            else:
-                                plt.savefig("heatmap" + str(i) + "c0-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
-                            plt.close()
-                        plt.imshow((frobenius_dist[0][1]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                        plt.colorbar(label="Value")
-                        plt.title("2-D Heat Map")
-                        plt.xlabel("X-axis")
-                        plt.ylabel("Y-axis")
-                        plt.savefig("heatmap" + str(i) + "c1-to-origin.png", dpi=300, bbox_inches='tight')
-                        plt.close()
-                        if i != 0:
-                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
-                            plt.imshow((frobenius_dist[0][1]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                            plt.colorbar(label="Value")
-                            plt.title("2-D Heat Map")
-                            plt.xlabel("X-axis")
-                            plt.ylabel("Y-axis")
-                            if i in interval_seq:
-                                plt.savefig("heatmap" + str(i) + "c1-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
-                            else:
-                                plt.savefig("heatmap" + str(i) + "c1-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
-                            plt.close()
-                        plt.imshow((frobenius_dist[0][2]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                        plt.colorbar(label="Value")
-                        plt.title("2-D Heat Map")
-                        plt.xlabel("X-axis")
-                        plt.ylabel("Y-axis")
-                        plt.savefig("heatmap" + str(i) + "c2-to-origin.png", dpi=300, bbox_inches='tight')
-                        plt.close()
-                        if i != 0:
-                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
-                            plt.imshow((frobenius_dist[0][2]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                            plt.colorbar(label="Value")
-                            plt.title("2-D Heat Map")
-                            plt.xlabel("X-axis")
-                            plt.ylabel("Y-axis")
-                            if i in interval_seq:
-                                plt.savefig("heatmap" + str(i) + "c2-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
-                            else:
-                                plt.savefig("heatmap" + str(i) + "c2-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
-                            plt.close()
-                        plt.imshow((frobenius_dist[0][3]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                        plt.colorbar(label="Value")
-                        plt.title("2-D Heat Map")
-                        plt.xlabel("X-axis")
-                        plt.ylabel("Y-axis")
-                        plt.savefig("heatmap" + str(i) + "c3-to-origin.png", dpi=300, bbox_inches='tight')
-                        plt.close()
-                        if i != 0:
-                            frobenius_dist = torch.abs(samples_lists[1][i] - samples_lists[1][i - 1])
-                            plt.imshow((frobenius_dist[0][3]).cpu().numpy(), cmap='viridis', interpolation='nearest')
-                            plt.colorbar(label="Value")
-                            plt.title("2-D Heat Map")
-                            plt.xlabel("X-axis")
-                            plt.ylabel("Y-axis")
-                            if i in interval_seq:
-                                plt.savefig("heatmap" + str(i) + "c3-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
-                            else:
-                                plt.savefig("heatmap" + str(i) + "c3-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
-                            plt.close()
+                            normalized_deviation = self.compute_group_norm_deviation_sum(samples_lists[inference_counter - 2][i] - samples_lists[inference_counter - 2][i - 1])
+                            print("setp:" + str(i) + ", devi:" + str(normalized_deviation))
+                            if normalized_deviation > max_d:
+                                max_d = normalized_deviation
+                                max_dindex = i
+                        # select the max deviation for the next step every 50/interval steps, and then reset the max_d
+                        if i == round_counter * 10:
+                            round_counter += 1
+                            last_step = max_dindex
+                            interval_seq.append(last_step)
+                            max_d = 0
+                            max_dindex = 0
+                            print(interval_seq)
+                            # redo the selected step (total inference), and skip u-net from here
+                            # TODO:
 
                 # perform guidance
                 if do_classifier_free_guidance:
