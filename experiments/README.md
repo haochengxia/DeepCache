@@ -42,7 +42,7 @@ pip install diffusers==0.24.0 transformers open_clip_torch
 
 For DeepCache:
 ```bash
-python generate.py --dataset coco2017 --layer 0 --block 0 --update_interval 2 --uniform --steps 50 --batch_size 16 
+python generate.py --dataset coco2017 --layer 0 --block 0 --update_interval 10 --uniform --steps 50 --batch_size 16 
 ```
 
 For Baselines:

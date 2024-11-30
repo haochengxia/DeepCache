@@ -40,6 +40,7 @@ from .unet_2d_condition import UNet2DConditionModel
 from .pipeline_utils import DiffusionPipeline
 
 import matplotlib.pyplot as plt
+import bisect
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -570,7 +571,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         plt.title("2-D Heat Map")
         plt.xlabel("X-axis")
         plt.ylabel("Y-axis")
-        plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-origin.png", dpi=300, bbox_inches='tight')
+        plt.savefig("heatmaps/heatmap" + str(step) + "c" + str(index0) + "-to-origin.png", dpi=300, bbox_inches='tight')
         plt.close()
         if step != 0:
             frobenius_dist_step = torch.abs(samples_lists[1][step] - samples_lists[1][step - 1])
@@ -580,25 +581,24 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
             plt.xlabel("X-axis")
             plt.ylabel("Y-axis")
             if step in interval_seq:
-                plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
+                plt.savefig("heatmaps/heatmap" + str(step) + "c" + str(index0) + "-to-laststep-notskipped.png", dpi=300, bbox_inches='tight')
             else:
-                plt.savefig("heatmaps/heatmap" + str(step) + "c0-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
+                plt.savefig("heatmaps/heatmap" + str(step) + "c" + str(index0) + "-to-laststep-skipped.png", dpi=300, bbox_inches='tight')
             plt.close()
 
-    def compute_group_norm_deviation_sum(self, tensor):
-        group_deviation_sum = 0
-        
-        # iterate over each 64x64 group
-        for group in tensor.view(-1, 64, 64):  # Reshape to (-1, 64, 64) for easier processing
-            group_min = group.min()
-            group_max = group.max()
-            
-            normalized_group = (group - group_min) / (group_max - group_min)
-            mean_normalized = normalized_group.mean()
-            norm_deviation = (normalized_group - mean_normalized).abs().mean()
-            group_deviation_sum += norm_deviation
-        
-        return group_deviation_sum.item()
+    def compute_group_norm_sum(self, tensor, neighbors):
+        # FIXME: make it more efficient
+        largest = torch.max(tensor)
+        threshold = largest / 3
+        binary_mask = (tensor > threshold).float()
+
+        # Use a 3x3 kernel of ones
+        kernel = torch.ones(3, 3).unsqueeze(0).unsqueeze(0)
+        binary_mask = binary_mask.unsqueeze(0).unsqueeze(0)
+        neighbor_check = torch.nn.functional.conv2d(binary_mask.to('cpu'), kernel, stride=1, padding=1)
+        valid_mask = (neighbor_check >= neighbors).squeeze(0).squeeze(0)
+        valid_sum = torch.sum(tensor[valid_mask])
+        return valid_sum / largest
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
@@ -785,13 +785,16 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         last_step = 0
         smart_interval_seq = True
         plot_heat_map = False
-        max_dindex = 0
-        max_d = 0
-        round_counter = 1
+        mono = 0
+        step_len = 2
+        mono_seq = [2, 2, 3, 3, 4]
+        mask_seq = [9, 9, 9, 9, 9]
+        last_sum = 0
 
         inference_counter += 1
         if smart_interval_seq:
-            interval_seq = [0, 7, 12, 30, 40]       # semi-auto for car, at least + 3
+            interval_seq = [last_step]       # When the difference becomes monotonous. Increase --> Old feature is not correctly drawn. 
+            # Decrease, time to draw details.
             # interval_seq = [4, 17, 29, 34, 37]    # This is a purely manual config for the camel
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
@@ -827,26 +830,48 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                         self.generate_heatmap(i, interval_seq, samples_lists, 1)
                         self.generate_heatmap(i, interval_seq, samples_lists, 2)
                         self.generate_heatmap(i, interval_seq, samples_lists, 3)
+                        if i != 0:
+                            index = bisect.bisect_left(interval_seq, i)
+                            mask_index = (index - 1) if index > 0 else 0
+                            index = interval_seq[index - 1] if index > 0 else 0
+                            difference = torch.abs(samples_lists[inference_counter - 2][i] - samples_lists[inference_counter - 2][index])
+                            normalized_sum = self.compute_group_norm_sum(difference[0][0], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][1], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][2], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][3], mask_seq[mask_index])
+                            print("step:" + str(i) + ", index:" + str(index) + ", norm sum:" + str(normalized_sum))
 
                 if smart_interval_seq:
                     if inference_counter == 3:
                         samples_lists[inference_counter - 2][i] = noise_pred
                         if i != 0:
-                            normalized_deviation = self.compute_group_norm_deviation_sum(samples_lists[inference_counter - 2][i] - samples_lists[inference_counter - 2][i - 1])
-                            print("setp:" + str(i) + ", devi:" + str(normalized_deviation))
-                            if normalized_deviation > max_d:
-                                max_d = normalized_deviation
-                                max_dindex = i
-                        # select the max deviation for the next step every 50/interval steps, and then reset the max_d
-                        if i == round_counter * 10:
-                            round_counter += 1
-                            last_step = max_dindex
-                            interval_seq.append(last_step)
-                            max_d = 0
-                            max_dindex = 0
-                            print(interval_seq)
-                            # redo the selected step (total inference), and skip u-net from here
-                            # TODO:
+                            index = bisect.bisect_left(interval_seq, i)
+                            mask_index = (index - 1) if index > 0 else 0
+                            index = interval_seq[index - 1] if index > 0 else 0
+                            difference = torch.abs(samples_lists[inference_counter - 2][i] - samples_lists[inference_counter - 2][index])
+                            normalized_sum = self.compute_group_norm_sum(difference[0][0], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][1], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][2], mask_seq[mask_index])
+                            normalized_sum += self.compute_group_norm_sum(difference[0][3], mask_seq[mask_index])
+                            print("step:" + str(i) + ", index:" + str(index) + ", norm sum:" + str(normalized_sum))
+                            if i >= last_step + step_len:
+                                if normalized_sum >= last_sum:
+                                    if mono >= 0:
+                                        mono += 1
+                                    else:
+                                        mono = 1
+                                else:
+                                    if mono <= 0:
+                                        mono -= 1
+                                    else:
+                                        mono = -1
+                                # print("mono:" + str(mono))
+                            if mono == -mono_seq[mask_index] or mono == mono_seq[mask_index]:
+                                mono = 0
+                                if len(interval_seq) < 5:
+                                    interval_seq.append(i + 1)
+                                last_step = i + 1
+                            last_sum = normalized_sum
 
                 # perform guidance
                 if do_classifier_free_guidance:

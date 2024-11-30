@@ -63,6 +63,7 @@ for sub_file in files:
 
             all_score.append(score.detach().cpu())
 
+    print(all_score)
     final_score = torch.cat(all_score).mean(0)
     print(file_path, ", Time= ", file_path.split('-')[-1].split('.pt')[0], "s, Score=", final_score.item())
     print()

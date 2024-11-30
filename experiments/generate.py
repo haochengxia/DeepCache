@@ -26,6 +26,8 @@ def main(args):
     else:
         raise NotImplementedError
 
+    prompts = prompts[0:31]
+
     # Fixing these sample prompts in the interest of reproducibility.
     if args.original:
         from diffusers import StableDiffusionPipeline
@@ -109,8 +111,8 @@ if __name__ == '__main__':
     parser.add_argument("--block", type=int, default=0)
     parser.add_argument("--update_interval", type=int, default=None)
     parser.add_argument("--uniform", action="store_true", default=False)
-    parser.add_argument("--pow", type=float, default=None)
-    parser.add_argument("--center", type=int, default=None)
+    parser.add_argument("--pow", type=float, default=1.4)
+    parser.add_argument("--center", type=int, default=15)
 
     # Sampling setup
     parser.add_argument("--steps", type=int, default=50)
