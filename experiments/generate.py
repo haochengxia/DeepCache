@@ -45,6 +45,8 @@ def main(args):
         from DeepCache.sd.pipeline_stable_diffusion import StableDiffusionPipeline
         pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to("cuda:0")
 
+    assert(args.batch_size == 1)    # We want good caching for each pic. However, if the batch size >1, we cannot control each picture.
+
     start_time = time.time()
     image_list, prompt_list = [], []
     num_batch = len(prompts) // args.batch_size 
@@ -116,7 +118,7 @@ if __name__ == '__main__':
 
     # Sampling setup
     parser.add_argument("--steps", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--num_batch", type=int, default=32)
 
     parser.add_argument("--seed", type=int, default=42)
