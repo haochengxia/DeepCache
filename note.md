@@ -28,3 +28,20 @@
         cache_block_id: Optional[int] = None,
 ```
 
+### Res
+
+```
+PYTHONPATH=. python experiments/generate.py --dataset coco2017 --layer 0 --block 0 --update_interval 10 --steps 50
+```
+
+Make sure all parameters are the same:
+50-block-0-layer-0-interval-10-uniform-False-pow-1.4-center-15
+
+```
+python score_is.py XX.pt
+```
+
+```
+Ours:      Inception Score: 6.471504894826317 ± 0.7687108696958255
+Deepcache: Inception Score: 6.2338975133210965 ± 0.7756914243550831
+```

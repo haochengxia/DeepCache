@@ -872,6 +872,15 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                                     interval_seq.append(i + 1)
                                 last_step = i + 1
                             last_sum = normalized_sum
+                
+                            # patch
+                    if len(interval_seq) < 5:
+                        should_have = max(i // 6-1, 0)
+                        if len(interval_seq) <= should_have:
+                            interval_seq.append(i + 1)
+                        last_step = i + 1
+
+                print(f"step: {i}, interval_seq: {interval_seq}, mono: {mono}")
 
                 # perform guidance
                 if do_classifier_free_guidance:

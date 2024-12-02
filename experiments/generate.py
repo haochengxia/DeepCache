@@ -25,8 +25,8 @@ def main(args):
         prompts = [{"Prompt": sample['captions'][0]} for sample in dataset['validation']]
     else:
         raise NotImplementedError
-
-    prompts = prompts[0:31]
+    
+    prompts = prompts[0:args.batch_size * args.num_batch]
 
     # Fixing these sample prompts in the interest of reproducibility.
     if args.original:
@@ -117,6 +117,7 @@ if __name__ == '__main__':
     # Sampling setup
     parser.add_argument("--steps", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_batch", type=int, default=32)
 
     parser.add_argument("--seed", type=int, default=42)
 
