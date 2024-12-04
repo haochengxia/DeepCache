@@ -592,6 +592,9 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 positive_len=positive_len, out_dim=cross_attention_dim, feature_type=feature_type
             )
 
+        self.previous_layer_outputs = {}
+        self.change_threshold = 1e-3
+
     @property
     def attn_processors(self) -> Dict[str, AttentionProcessor]:
         r"""
@@ -954,37 +957,103 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         is_controlnet = mid_block_additional_residual is not None and down_block_additional_residuals is not None
         is_adapter = mid_block_additional_residual is None and down_block_additional_residuals is not None
 
+        # ---------------
+        current_layer_outputs = {}
+
+        # 定义一个变量，指示是否需要更新缓存策略
+        update_cache = False
+
+        # 如果这是第一个时间步，没有前一时间步的输出，无法计算变化量
+        if timestep == self.scheduler.timesteps[0]:
+            update_cache = False
+        else:
+            update_cache = True
+
+        # 记录需要缓存的层和块的索引
+        selected_cache_layer_id = None
+        selected_cache_block_id = None
+        # ---------------
+
+
         down_block_res_samples = (sample,)
         if quick_replicate and replicate_prv_feature is not None:
             # Down
             for i, downsample_block in enumerate(self.down_blocks):
                 if i > cache_layer_id:
                     break
+                
 
-                if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
-                    # For t2i-adapter CrossAttnDownBlock2D
-                    additional_residuals = {}
-                    if is_adapter and len(down_block_additional_residuals) > 0:
-                        additional_residuals["additional_residuals"] = down_block_additional_residuals.pop(0)
+                if update_cache:
+                    previous_output = self.previous_layer_outputs.get(f"down_block_{i}")
+                    if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
+                        # For t2i-adapter CrossAttnDownBlock2D
+                        additional_residuals = {}
+                        if is_adapter and len(down_block_additional_residuals) > 0:
+                            additional_residuals["additional_residuals"] = down_block_additional_residuals.pop(0)
 
-                    sample, res_samples = downsample_block(
-                        hidden_states=sample,
-                        temb=emb,
-                        encoder_hidden_states=encoder_hidden_states,
-                        attention_mask=attention_mask,
-                        cross_attention_kwargs=cross_attention_kwargs,
-                        encoder_attention_mask=encoder_attention_mask,
-                        exist_block_number=cache_block_id if i == cache_layer_id else None,
-                        **additional_residuals,
-                    )
+                        sample, res_samples = downsample_block(
+                            hidden_states=sample,
+                            temb=emb,
+                            encoder_hidden_states=encoder_hidden_states,
+                            attention_mask=attention_mask,
+                            cross_attention_kwargs=cross_attention_kwargs,
+                            encoder_attention_mask=encoder_attention_mask,
+                            exist_block_number=cache_block_id if i == cache_layer_id else None,
+                            **additional_residuals,
+                        )
+                        current_layer_outputs[f"down_block_{i}"] = sample
+                    else:
+                        sample, res_samples = downsample_block(hidden_states=sample, temb=emb, scale=lora_scale)
+
+                        if is_adapter and len(down_block_additional_residuals) > 0:
+                            sample += down_block_additional_residuals.pop(0)
+
+                        current_layer_outputs[f"down_block_{i}"] = sample
+                    down_block_res_samples += res_samples
+
+                    if previous_output is not None:
+                        # 计算变化量
+                        change = torch.mean((current_layer_outputs[f"down_block_{i}"] - previous_output) ** 2).item()
+                        if change < self.change_threshold:
+                            # 变化量小于阈值，可以缓存
+                            selected_cache_layer_id = i
+                            selected_cache_block_id = None  # 根据需要调整
+                            # 设置缓存策略后，跳出循环
+                            break
+                    # 更新 sample
+                    sample = current_layer_outputs[f"down_block_{i}"]
+                    down_block_res_samples += res_samples
+
                 else:
-                    sample, res_samples = downsample_block(hidden_states=sample, temb=emb, scale=lora_scale)
+                    if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
+                        # For t2i-adapter CrossAttnDownBlock2D
+                        additional_residuals = {}
+                        if is_adapter and len(down_block_additional_residuals) > 0:
+                            additional_residuals["additional_residuals"] = down_block_additional_residuals.pop(0)
 
-                    if is_adapter and len(down_block_additional_residuals) > 0:
-                        sample += down_block_additional_residuals.pop(0)
+                        sample, res_samples = downsample_block(
+                            hidden_states=sample,
+                            temb=emb,
+                            encoder_hidden_states=encoder_hidden_states,
+                            attention_mask=attention_mask,
+                            cross_attention_kwargs=cross_attention_kwargs,
+                            encoder_attention_mask=encoder_attention_mask,
+                            exist_block_number=cache_block_id if i == cache_layer_id else None,
+                            **additional_residuals,
+                        )
+                        current_layer_outputs[f"down_block_{i}"] = sample
+                    else:
+                        sample, res_samples = downsample_block(hidden_states=sample, temb=emb, scale=lora_scale)
 
-                down_block_res_samples += res_samples
+                        if is_adapter and len(down_block_additional_residuals) > 0:
+                            sample += down_block_additional_residuals.pop(0)
 
+                        current_layer_outputs[f"down_block_{i}"] = sample
+                    down_block_res_samples += res_samples
+
+            self.previous_layer_outputs = current_layer_outputs
+            cache_block_id = selected_cache_block_id
+            cache_layer_id = selected_cache_layer_id
             # No Middle
             # Up
             #print("down_block_res_samples:", [res_sample.shape for res_sample in down_block_res_samples])
