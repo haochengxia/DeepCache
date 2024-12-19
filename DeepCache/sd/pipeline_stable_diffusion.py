@@ -658,6 +658,8 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
 
+        logger.info(f"[CS 598] Generating images with height: {height}, width: {width}")
+
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt, height, width, callback_steps, negative_prompt, prompt_embeds, negative_prompt_embeds
@@ -772,7 +774,20 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                     noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                # --------- [CS 598] Add mask to the noise_pred
+                # Define Mask (shape: [1, 1, H, W])
+                mask = torch.zeros((1, 1, height, width), device=device)
+                mask[:, :, 150:350, 150:350] = 1.0  # 更新中间区域，坐标可自定义
+                mask = torch.nn.functional.interpolate(mask, size=(height // 8, width // 8))  # 缩放到 latent 空间大小
+                # latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                
+                # compute the previous noisy sample x_t -> x_t-1 with masking
+                latents_next = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+                # Apply the mask: only update specified areas
+                latents = latents * (1 - mask) + latents_next * mask
+                # ---------------------------------------------
+                
                 latents_list.append(latents)
 
                 # call the callback, if provided
