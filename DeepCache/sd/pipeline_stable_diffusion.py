@@ -699,6 +699,8 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
 
+        logger.info(f"[CS 598] Generating images with height: {height}, width: {width}")
+
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt, height, width, callback_steps, negative_prompt, prompt_embeds, negative_prompt_embeds
@@ -894,7 +896,54 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                     noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                # --------- [CS 598] Add mask to the noise_pred
+                def create_dynamic_mask(step, num_steps, height, width, device):
+                    # if step > 0.8 * num_steps:
+                    #    mask = torch.ones((1, 1, height, width), dtype=torch.float16, device=device)
+                    #    mask = torch.nn.functional.interpolate(mask, size=(height // 8, width // 8))
+                    #    return mask
+
+                    mask = torch.zeros((1, 1, height, width), dtype=torch.float16, device=device)
+                    step_tensor = torch.tensor(step, dtype=torch.float32, device=device)
+                    num_steps_tensor = torch.tensor(num_steps, dtype=torch.float32, device=device)
+
+                    center_x = int(width * (0.5 + 0.5 * torch.sin(step_tensor / num_steps_tensor * 2 * 3.14159)))
+                    center_y = int(height * (0.5 + 0.5 * torch.cos(step_tensor / num_steps_tensor * 2 * 3.14159)))
+                    size = max(50, int(200 * (1 - step / (10 * num_steps))))
+
+                    x1 = max(0, center_x - size // 2)
+                    x2 = min(width, center_x + size // 2)
+                    y1 = max(0, center_y - size // 2)
+                    y2 = min(height, center_y + size // 2)
+
+                    # mask[:, :, y1:y2, x1:x2] = 1.0
+                    mask[:, :, 150:350, 150:350] = 1.0
+                    
+                    print(f'[CS 598] step {step}/{num_steps} range {y1} {y2} {x1} {x2}')
+                    mask = torch.nn.functional.interpolate(mask, size=(height // 8, width // 8))
+                    return mask
+
+                # Define Mask (shape: [1, 1, H, W])
+                import os
+                mask_flag = int(os.environ.get('ENABLE_MASK', '0'))
+                logger.info(f"[CS 598] Mask or not {mask_flag}")
+                if mask_flag:
+                    mask = create_dynamic_mask(i, num_inference_steps, height, width, device)
+                
+                    # compute the previous noisy sample x_t -> x_t-1 with masking
+                    latents_next = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+                    # Apply the mask: only update specified areas
+                    # if num_inference_steps * 0.3 < i < num_inference_steps * 0.8:
+                    #  if num_inference_steps * 0.05 < i < num_inference_steps * 0.1 or num_inference_steps * 0.65 < i < num_inference_steps * 0.7:
+                    if num_inference_steps * 0.05 < i < num_inference_steps * 0.1: # or num_inference_steps * 0.65 < i < num_inference_steps * 0.7:
+                        latents = latents * (1 - mask) + latents_next * mask
+                    else:
+                        latents = latents_next
+                else:
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                # ---------------------------------------------
+                
                 latents_list.append(latents)
 
                 # call the callback, if provided
