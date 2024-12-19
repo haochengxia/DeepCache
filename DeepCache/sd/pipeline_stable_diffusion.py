@@ -782,18 +782,18 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
 
         global inference_counter
         global samples_lists
-        last_step = 0
+        last_step = 1
         smart_interval_seq = True
         plot_heat_map = False
         mono = 0
         step_len = 2
-        mono_seq = [2, 2, 3, 3, 4]
+        mono_seq = [4, 3, 5, 5, 7]
         mask_seq = [9, 9, 9, 9, 9]
         last_sum = 0
 
         inference_counter += 1
         if smart_interval_seq:
-            interval_seq = [last_step]       # When the difference becomes monotonous. Increase --> Old feature is not correctly drawn. 
+            interval_seq = [last_step]#[last_step]       # When the difference becomes monotonous. Increase --> Old feature is not correctly drawn. 
             # Decrease, time to draw details.
             # interval_seq = [4, 17, 29, 34, 37]    # This is a purely manual config for the camel
 
@@ -841,7 +841,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                             normalized_sum += self.compute_group_norm_sum(difference[0][3], mask_seq[mask_index])
                             # print("step:" + str(i) + ", index:" + str(index) + ", norm sum:" + str(normalized_sum))
 
-                if smart_interval_seq:
+                if smart_interval_seq and len(interval_seq) < 5:
                     if inference_counter >= 0:
                         samples_lists[0][i] = noise_pred
                         if i != 0:
@@ -853,15 +853,13 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                             normalized_sum += self.compute_group_norm_sum(difference[0][1], mask_seq[mask_index])
                             normalized_sum += self.compute_group_norm_sum(difference[0][2], mask_seq[mask_index])
                             normalized_sum += self.compute_group_norm_sum(difference[0][3], mask_seq[mask_index])
-                            print("step:" + str(i) + ", index:" + str(index) + ", norm sum:" + str(normalized_sum))
+                            # print("step:" + str(i) + ", index:" + str(index) + ", norm sum:" + str(normalized_sum))
                             if i >= last_step + step_len:
-                                if normalized_sum > last_sum:
+                                if normalized_sum >= last_sum:
                                     if mono >= 0:
                                         mono += 1
                                     else:
                                         mono = 1
-                                elif normalized_sum == last_sum:
-                                    mono = 0
                                 else:
                                     if mono <= 0:
                                         mono -= 1
@@ -872,7 +870,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                                 mono = 0
                                 if len(interval_seq) < 5:
                                     interval_seq.append(i + 1)
-                                    print(interval_seq)
+                                    # print(interval_seq)
                                     last_step = i + 1
                             last_sum = normalized_sum
                 
@@ -881,7 +879,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                                 should_have = max(i // 6-1, 0)
                                 if len(interval_seq) <= should_have:
                                     interval_seq.append(i + 1)
-                                    print(interval_seq)
+                                    # print(interval_seq)
                                     last_step = i + 1
 
                             # print(f"step: {i}, interval_seq: {interval_seq}, mono: {mono}")
