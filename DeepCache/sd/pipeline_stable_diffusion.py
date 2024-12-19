@@ -699,7 +699,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
 
-        logger.info(f"[CS 598] Generating images with height: {height}, width: {width}")
+        # logger.info(f"[CS 598] Generating images with height: {height}, width: {width}")
 
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
@@ -785,7 +785,8 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
         global inference_counter
         global samples_lists
         last_step = 1
-        smart_interval_seq = True
+        smart_interval_flag = int(os.environ.get('ENABLE_SMART_INTERVAL', '0'))
+        smart_interval_seq = True if smart_interval_flag == 1 else False
         plot_heat_map = False
         mono = 0
         step_len = 2
@@ -926,7 +927,7 @@ class StableDiffusionPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lo
                 # Define Mask (shape: [1, 1, H, W])
                 import os
                 mask_flag = int(os.environ.get('ENABLE_MASK', '0'))
-                logger.info(f"[CS 598] Mask or not {mask_flag}")
+                # logger.info(f"[CS 598] Mask or not {mask_flag}")
                 if mask_flag:
                     mask = create_dynamic_mask(i, num_inference_steps, height, width, device)
                 
